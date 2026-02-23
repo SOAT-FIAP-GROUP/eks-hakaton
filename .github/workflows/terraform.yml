@@ -1,0 +1,135 @@
+name: "Terraform Workflow"
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      aws-region:
+        type: string
+        required: true
+      aws-statefile-s3-bucket:
+        type: string
+        required: true
+      aws-statefile-key:
+        type: string
+        required: true
+      aws-lock-dynamodb-table:
+        type: string
+        required: true
+      destroy:
+        type: string
+        required: false
+        default: 'false'
+    secrets:
+      aws-assume-role-arn:
+        required: true
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.3.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.aws-assume-role-arn }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ inputs.aws-statefile-s3-bucket }}" \
+            -backend-config="key=${{ inputs.aws-statefile-key }}" \
+            -backend-config="region=${{ inputs.aws-region }}" \
+            -backend-config="dynamodb_table=${{ inputs.aws-lock-dynamodb-table }}"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Destroy
+        if:  ${{ inputs.destroy == 'true' }}
+        id: terraform-destroy
+        run: |
+          terraform workspace select ${{ inputs.environment }} || terraform workspace new ${{ inputs.environment }}
+          terraform destroy -auto-approve
+
+      - name: Terraform Plan
+        if: ${{ inputs.destroy != 'true' }}
+        id: terraform-plan
+        run: |
+          terraform workspace select ${{ inputs.environment }} || terraform workspace new ${{ inputs.environment }}
+          terraform plan -out="${{ inputs.environment }}.plan"
+
+      - name: Terraform Apply
+        if: ${{ inputs.destroy != 'true' }}
+        id: terraform-apply
+        run: |
+          terraform workspace select ${{ inputs.environment }} || terraform workspace new ${{ inputs.environment }}
+          terraform apply "${{ inputs.environment }}.plan"
+
+      # - name: Get Terraform outputs (RDS)
+      #   if: ${{ inputs.destroy != 'true' }}
+      #   id: tf_outputs
+      #   run: |
+      #     SPRING_DATASOURCE_URL=$(terraform output -raw db_instance_endpoint_pedido)
+      #     echo "SPRING_DATASOURCE_URL=$SPRING_DATASOURCE_URL" >> $GITHUB_OUTPUT
+
+      - name: Get SSM parameters
+        if: ${{ inputs.destroy != 'true' }}
+        id: ssm
+        run: |
+          SPRING_ACTIVE_PROFILE=$(aws ssm get-parameter --name "SPRING_ACTIVE_PROFILE" --with-decryption --query "Parameter.Value" --output text)
+          SPRING_DATASOURCE_NAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_NAME" --with-decryption --query "Parameter.Value" --output text)
+          SPRING_DATASOURCE_USERNAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_USERNAME" --with-decryption --query "Parameter.Value" --output text)
+          SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --name "SPRING_DATASOURCE_PASSWORD" --with-decryption --query "Parameter.Value" --output text)
+          echo "SPRING_ACTIVE_PROFILE=$SPRING_ACTIVE_PROFILE" >> $GITHUB_OUTPUT
+          echo "SPRING_DATASOURCE_NAME=$SPRING_DATASOURCE_NAME" >> $GITHUB_OUTPUT
+          echo "SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME" >> $GITHUB_OUTPUT
+          echo "SPRING_DATASOURCE_PASSWORD=$SPRING_DATASOURCE_PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Render ConfigMap
+        if: ${{ inputs.destroy != 'true' }}
+        run: |
+          # export SPRING_DATASOURCE_URL="${{ steps.tf_outputs.outputs.SPRING_DATASOURCE_URL }}"
+          export SPRING_DATASOURCE_USERNAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_USERNAME }}"
+          export SPRING_DATASOURCE_NAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_NAME }}"
+          export SPRING_ACTIVE_PROFILE="${{ steps.ssm.outputs.SPRING_ACTIVE_PROFILE }}"
+          envsubst < k8s/configmap.yaml > k8s/configmap_rendered.yaml
+
+      - name: Configure kubectl
+        if: ${{ inputs.destroy != 'true' }}
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws-region }} \
+            --name hakaton-app-dev
+
+      - name: Deploy Metrics Server
+        if: ${{ inputs.destroy != 'true' }}
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+      
+      - name: Apply Kubernetes Secrets
+        if: ${{ inputs.destroy != 'true' }}
+        run: |
+          kubectl create secret generic hakaton-secret \
+            --from-literal=spring.datasource.password=${{ steps.ssm.outputs.SPRING_DATASOURCE_PASSWORD }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply k8s
+        if: ${{ inputs.destroy != 'true' }}
+        run: |
+          kubectl apply -f k8s

@@ -1,0 +1,29 @@
+name: "Deploy terraform-eks"
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: "Destroy resources"
+        required: false
+        default: 'false'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/terraform.yml
+    with:
+      environment: dev
+      aws-region: "${{ vars.AWS_REGION }}"
+      aws-statefile-s3-bucket: "${{ vars.BUCKET_S3_NAME }}"
+      aws-statefile-key: "eks/terraform.tfstate"
+      aws-lock-dynamodb-table: "${{ vars.DYNAMODB_TABLE }}"
+      destroy: ${{ github.event.inputs.destroy || 'false' }}
+    secrets:
+      aws-assume-role-arn: ${{ secrets.AWS_ASSUME_ROLE_ARN_EKS }}
