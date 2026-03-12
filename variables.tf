@@ -43,15 +43,3 @@ variable "vpc_subnets_count" {
   type        = number
   default     = 2 # For EKS, you need at least two availability zones??
 }
-
-variable "container_port" {
-  description = "Container port to be exposed and mapped to host"
-  type        = number
-  default     = 8080
-}
-
-variable "docker_image" {
-  description = "Docker image for k8s deployment"
-  type        = string
-  default     = "ashenonedev/lanchonete-app:latest"
-}

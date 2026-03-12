@@ -16,16 +16,18 @@ data "terraform_remote_state" "rds" {
   }
 }
 
-module "eks_outbound_to_rds" { #outbound MariaDB at ECS to RDS-sg
+module "eks_outbound_to_rds" {
   source            = "terraform-aws-modules/security-group/aws"
   create_sg         = false
   security_group_id = data.terraform_remote_state.rds.outputs.sg_eks_id
+
   computed_egress_with_source_security_group_id = [
     {
-      rule                     = "mysql-tcp"
+      rule                     = "postgresql-tcp"
       source_security_group_id = data.terraform_remote_state.rds.outputs.sg_rds_id
     }
   ]
+
   number_of_computed_egress_with_source_security_group_id = 1
   depends_on = [data.terraform_remote_state.rds]
 }
@@ -36,7 +38,7 @@ module "rds_inbound_from_eks" { #inbound MariaDB at RDS from ECS-sg
   security_group_id = data.terraform_remote_state.rds.outputs.sg_rds_id
   computed_ingress_with_source_security_group_id = [
     {
-      rule                     = "mysql-tcp"
+      rule                     = "postgresql-tcp"
       source_security_group_id = data.terraform_remote_state.rds.outputs.sg_eks_id
     }
   ]
