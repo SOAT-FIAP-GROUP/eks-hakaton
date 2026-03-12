@@ -88,27 +88,28 @@ jobs:
       #     SPRING_DATASOURCE_URL=$(terraform output -raw db_instance_endpoint_pedido)
       #     echo "SPRING_DATASOURCE_URL=$SPRING_DATASOURCE_URL" >> $GITHUB_OUTPUT
 
-      - name: Get SSM parameters
-        if: ${{ inputs.destroy != 'true' }}
-        id: ssm
-        run: |
-          SPRING_ACTIVE_PROFILE=$(aws ssm get-parameter --name "SPRING_ACTIVE_PROFILE" --with-decryption --query "Parameter.Value" --output text)
-          SPRING_DATASOURCE_NAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_NAME" --with-decryption --query "Parameter.Value" --output text)
-          SPRING_DATASOURCE_USERNAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_USERNAME" --with-decryption --query "Parameter.Value" --output text)
-          SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --name "SPRING_DATASOURCE_PASSWORD" --with-decryption --query "Parameter.Value" --output text)
-          echo "SPRING_ACTIVE_PROFILE=$SPRING_ACTIVE_PROFILE" >> $GITHUB_OUTPUT
-          echo "SPRING_DATASOURCE_NAME=$SPRING_DATASOURCE_NAME" >> $GITHUB_OUTPUT
-          echo "SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME" >> $GITHUB_OUTPUT
-          echo "SPRING_DATASOURCE_PASSWORD=$SPRING_DATASOURCE_PASSWORD" >> $GITHUB_OUTPUT
+      # - name: Get SSM parameters
+      #   if: ${{ inputs.destroy != 'true' }}
+      #   id: ssm
+      #   run: |
+      #     SPRING_ACTIVE_PROFILE=$(aws ssm get-parameter --name "SPRING_ACTIVE_PROFILE" --with-decryption --query "Parameter.Value" --output text)
+      #     SPRING_DATASOURCE_NAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_NAME" --with-decryption --query "Parameter.Value" --output text)
+      #     SPRING_DATASOURCE_USERNAME=$(aws ssm get-parameter --name "SPRING_DATASOURCE_USERNAME" --with-decryption --query "Parameter.Value" --output text)
+      #     SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --name "SPRING_DATASOURCE_PASSWORD" --with-decryption --query "Parameter.Value" --output text)
+      #     echo "SPRING_ACTIVE_PROFILE=$SPRING_ACTIVE_PROFILE" >> $GITHUB_OUTPUT
+      #     echo "SPRING_DATASOURCE_NAME=$SPRING_DATASOURCE_NAME" >> $GITHUB_OUTPUT
+      #     echo "SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME" >> $GITHUB_OUTPUT
+      #     echo "SPRING_DATASOURCE_PASSWORD=$SPRING_DATASOURCE_PASSWORD" >> $GITHUB_OUTPUT
 
-      - name: Render ConfigMap
-        if: ${{ inputs.destroy != 'true' }}
-        run: |
-          # export SPRING_DATASOURCE_URL="${{ steps.tf_outputs.outputs.SPRING_DATASOURCE_URL }}"
-          export SPRING_DATASOURCE_USERNAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_USERNAME }}"
-          export SPRING_DATASOURCE_NAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_NAME }}"
-          export SPRING_ACTIVE_PROFILE="${{ steps.ssm.outputs.SPRING_ACTIVE_PROFILE }}"
-          envsubst < k8s/configmap.yaml > k8s/configmap_rendered.yaml
+      # - name: Render ConfigMap
+      #   if: ${{ inputs.destroy != 'true' }}
+      #   # export SPRING_DATASOURCE_URL="${{ steps.tf_outputs.outputs.SPRING_DATASOURCE_URL }}"
+
+      #   run: |
+      #     export SPRING_DATASOURCE_USERNAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_USERNAME }}"
+      #     export SPRING_DATASOURCE_NAME="${{ steps.ssm.outputs.SPRING_DATASOURCE_NAME }}"
+      #     export SPRING_ACTIVE_PROFILE="${{ steps.ssm.outputs.SPRING_ACTIVE_PROFILE }}"
+      #     envsubst < k8s/configmap.yaml > k8s/configmap_rendered.yaml
 
       - name: Configure kubectl
         if: ${{ inputs.destroy != 'true' }}
@@ -122,12 +123,12 @@ jobs:
         run: |
           kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
       
-      - name: Apply Kubernetes Secrets
-        if: ${{ inputs.destroy != 'true' }}
-        run: |
-          kubectl create secret generic hakaton-secret \
-            --from-literal=spring.datasource.password=${{ steps.ssm.outputs.SPRING_DATASOURCE_PASSWORD }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+      # - name: Apply Kubernetes Secrets
+      #   if: ${{ inputs.destroy != 'true' }}
+      #   run: |
+      #     kubectl create secret generic hakaton-secret \
+      #       --from-literal=spring.datasource.password=${{ steps.ssm.outputs.SPRING_DATASOURCE_PASSWORD }} \
+      #       --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply k8s
         if: ${{ inputs.destroy != 'true' }}
